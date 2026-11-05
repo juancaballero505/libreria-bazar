@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String   @default("customer") // admin | customer
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String
+  products Product[]
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  sku         String      @unique
+  price       Float
+  stock       Int         @default(0)
+  minStock    Int         @default(5)
+  imageUrl    String?
+  categoryId  String?
+  category    Category?   @relation(fields: [categoryId], references: [id])
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orderItems  OrderItem[]
+  promotions  Promotion[]
+}
+
+model Promotion {
+  id         String    @id @default(cuid())
+  name       String
+  type       String    // percentage | fixed
+  value      Float
+  code       String?   @unique
+  startDate  DateTime
+  endDate    DateTime
+  productId  String?
+  product    Product?  @relation(fields: [productId], references: [id])
+  active     Boolean   @default(true)
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  userId         String?
+  user           User?       @relation(fields: [userId], references: [id])
+  status         String      @default("pending") // pending | paid | cancelled | shipped
+  total          Float
+  discount       Float       @default(0)
+  mpPreferenceId String?
+  mpPaymentId    String?
+  customerName   String?
+  customerEmail  String?
+  customerPhone  String?
+  createdAt      DateTime    @default(now())
+  items          OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float   // precio al momento de la venta
+}
+
+model PrintJob {
+  id           String    @id @default(cuid())
+  filename     String
+  originalName String
+  status       String    @default("pending") // pending | printing | done | error
+  copies       Int       @default(1)
+  createdAt    DateTime  @default(now())
+  printedAt    DateTime?
+}
