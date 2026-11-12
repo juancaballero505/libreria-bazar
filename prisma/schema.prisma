@@ -58,7 +58,8 @@ model Order {
   id             String      @id @default(cuid())
   userId         String?
   user           User?       @relation(fields: [userId], references: [id])
-  status         String      @default("pending") // pending | paid | cancelled | shipped
+  status         String      @default("pending") // pending | paid | delivered | cancelled | refunded
+  deliveredAt    DateTime?
   total          Float
   discount       Float       @default(0)
   mpPreferenceId String?
@@ -89,3 +90,4 @@ model PrintJob {
   createdAt    DateTime  @default(now())
   printedAt    DateTime?
 }
+
