@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseOrderBody, OrderItemInput } from "@/lib/orders";
-
+import { Prisma } from "@prisma/client";
 // Error propio para poder devolver el status correcto (400, 409, etc.)
 class OrderError extends Error {
   status: number;
@@ -93,4 +93,21 @@ export async function POST(req: NextRequest) {
   }
 }
 
+
+//GET para listar pedidos
+
+export async function GET(req: NextRequest) {
+  const status = req.nextUrl.searchParams.get("status");
+
+  const where: Prisma.OrderWhereInput = {};
+  if (status) where.status = status;
+
+  const orders = await prisma.order.findMany({
+    where,
+    include: { items: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json(orders);
+}
 
