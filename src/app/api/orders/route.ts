@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseOrderBody, OrderItemInput } from "@/lib/orders";
-import { Prisma } from "@prisma/client";
-// Error propio para poder devolver el status correcto (400, 409, etc.)
+import { createPreference } from "@/lib/mercadopago";
+
 class OrderError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -11,7 +12,6 @@ class OrderError extends Error {
   }
 }
 
-// Junta productos repetidos: [A x1, A x2] -> [A x3]
 function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   const map = new Map<string, number>();
   for (const it of items) {
@@ -31,15 +31,12 @@ export async function POST(req: NextRequest) {
   const items = mergeItems(parsed.data.items);
 
   try {
-    // Todo dentro de la transacción: si algo falla, se deshace todo
-    const order = await prisma.$transaction(async (tx) => {
-      // 1. Traer los productos de una sola consulta
+    const result = await prisma.$transaction(async (tx) => {
       const products = await tx.product.findMany({
         where: { id: { in: items.map((i) => i.productId) } },
       });
       const byId = new Map(products.map((p) => [p.id, p]));
 
-      // 2. Verificar que existan y estén activos, y calcular el total
       let total = 0;
       const orderItems = items.map((item) => {
         const product = byId.get(item.productId);
@@ -47,30 +44,20 @@ export async function POST(req: NextRequest) {
           throw new OrderError(`Producto no disponible: ${item.productId}`, 400);
         }
         total += product.price * item.quantity;
-        // El precio se guarda tal cual está AHORA: es el precio histórico
-        return {
-          productId: product.id,
-          quantity: item.quantity,
-          price: product.price,
-        };
+        return { productId: product.id, quantity: item.quantity, price: product.price };
       });
 
-      // 3. Descontar stock solo si alcanza (evita que dos compras vendan lo mismo)
       for (const item of items) {
-        const result = await tx.product.updateMany({
+        const r = await tx.product.updateMany({
           where: { id: item.productId, stock: { gte: item.quantity } },
           data: { stock: { decrement: item.quantity } },
         });
-        if (result.count === 0) {
-          throw new OrderError(
-            `Stock insuficiente para el producto ${item.productId}`,
-            409
-          );
+        if (r.count === 0) {
+          throw new OrderError(`Stock insuficiente para el producto ${item.productId}`, 409);
         }
       }
 
-      // 4. Crear el pedido con sus ítems
-      return tx.order.create({
+      const order = await tx.order.create({
         data: {
           customerName,
           customerEmail,
@@ -81,9 +68,28 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       });
+
+      const pref = await createPreference({
+        id: order.id,
+        customerName: order.customerName,
+        customerEmail: order.customerEmail,
+        items: orderItems.map((it) => ({
+          quantity: it.quantity,
+          price: it.price,
+          product: { name: byId.get(it.productId)?.name ?? "Producto" },
+        })),
+      });
+
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data: { mpPreferenceId: pref.id },
+        include: { items: true },
+      });
+
+      return { order: updated, initPoint: pref.sandboxInitPoint };
     });
 
-    return NextResponse.json(order, { status: 201 });
+    return NextResponse.json({ ...result.order, initPoint: result.initPoint }, { status: 201 });
   } catch (e) {
     if (e instanceof OrderError) {
       return NextResponse.json({ error: e.message }, { status: e.status });
@@ -93,12 +99,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-
-//GET para listar pedidos
-
+// GET /api/orders?status=paid
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get("status");
-
   const where: Prisma.OrderWhereInput = {};
   if (status) where.status = status;
 
@@ -107,7 +110,10 @@ export async function GET(req: NextRequest) {
     include: { items: true },
     orderBy: { createdAt: "desc" },
   });
-
   return NextResponse.json(orders);
 }
+
+
+
+
 
