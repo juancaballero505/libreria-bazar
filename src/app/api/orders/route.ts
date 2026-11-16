@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseOrderBody, OrderItemInput } from "@/lib/orders";
+import { parseOrderBody, OrderItemInput, cancelExpiredOrders } from "@/lib/orders";
 import { createPreference } from "@/lib/mercadopago";
 
 class OrderError extends Error {
@@ -21,7 +21,9 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
 }
 
 // POST /api/orders
+
 export async function POST(req: NextRequest) {
+  await cancelExpiredOrders();
   const parsed = parseOrderBody(await req.json().catch(() => null));
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
@@ -47,15 +49,17 @@ export async function POST(req: NextRequest) {
         return { productId: product.id, quantity: item.quantity, price: product.price };
       });
 
-      for (const item of items) {
-        const r = await tx.product.updateMany({
-          where: { id: item.productId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        });
-        if (r.count === 0) {
-          throw new OrderError(`Stock insuficiente para el producto ${item.productId}`, 409);
-        }
-      }
+     for (const item of items) {
+  // Reserva solo si el stock disponible (stock - reserved) alcanza
+  const r = await tx.$executeRaw`
+    UPDATE Product
+    SET reserved = reserved + ${item.quantity}
+    WHERE id = ${item.productId} AND stock - reserved >= ${item.quantity}
+  `;
+  if (r === 0) {
+    throw new OrderError(`Stock insuficiente para el producto ${item.productId}`, 409);
+  }
+}
 
       const order = await tx.order.create({
         data: {
@@ -101,6 +105,7 @@ export async function POST(req: NextRequest) {
 
 // GET /api/orders?status=paid
 export async function GET(req: NextRequest) {
+  await cancelExpiredOrders();
   const status = req.nextUrl.searchParams.get("status");
   const where: Prisma.OrderWhereInput = {};
   if (status) where.status = status;
@@ -112,6 +117,8 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json(orders);
 }
+
+
 
 
 

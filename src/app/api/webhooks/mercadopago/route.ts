@@ -1,50 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+const MP = "https://api.mercadopago.com";
+
+async function mpGet(path: string) {
+  const token = process.env.MP_ACCESS_TOKEN;
+  if (!token) throw new Error("Falta MP_ACCESS_TOKEN");
+  const res = await fetch(`${MP}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Mercado Pago ${res.status} en ${path}`);
+  return res.json();
+}
+
+// Confirma un pago aprobado: pasa el pedido a paid y ajusta stock y reserva.
+// Es idempotente: si el pedido ya está pagado, no hace nada.
+async function confirmPayment(paymentId: string): Promise<boolean> {
+  const payment = await mpGet(`/v1/payments/${paymentId}`);
+  if (payment.status !== "approved" || !payment.external_reference) return false;
+
+  const orderId = String(payment.external_reference);
+  const mpPaymentId = String(payment.id);
+
+  return prisma.$transaction(async (tx) => {
+    // Caso normal: el pedido estaba pending y tiene reserva
+    const pagado = await tx.order.updateMany({
+      where: { id: orderId, status: "pending" },
+      data: { status: "paid", mpPaymentId },
+    });
+
+    if (pagado.count === 1) {
+      const items = await tx.orderItem.findMany({ where: { orderId } });
+      for (const it of items) {
+        await tx.product.update({
+          where: { id: it.productId },
+          data: {
+            stock: { decrement: it.quantity },
+            reserved: { decrement: it.quantity },
+          },
+        });
+      }
+      return true;
+    }
+
+    // Caso raro: el pedido ya venció y se canceló. La reserva ya se liberó
+    const tarde = await tx.order.updateMany({
+      where: { id: orderId, status: "cancelled" },
+      data: { status: "paid", mpPaymentId },
+    });
+
+    if (tarde.count === 1) {
+      const items = await tx.orderItem.findMany({ where: { orderId } });
+      for (const it of items) {
+        await tx.product.update({
+          where: { id: it.productId },
+          data: { stock: { decrement: it.quantity } },
+        });
+      }
+      return true;
+    }
+
+    return false;
+  });
+}
+
 // POST /api/webhooks/mercadopago
 export async function POST(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const body = await req.json().catch(() => null);
 
-  // Formato nuevo: type y data.id (en el cuerpo o en la URL)
-  // Formato antiguo: topic e id (en la URL)
-  const type = params.get("type") ?? params.get("topic") ?? body?.type ?? body?.topic ?? null;
-  const paymentId = params.get("data.id") ?? params.get("id") ?? body?.data?.id ?? null;
+  // Formato nuevo (type, data.id) o antiguo (topic, id). merchant_order viene con resource
+  const topic = params.get("topic") ?? params.get("type") ?? body?.topic ?? body?.type ?? null;
+  const id =
+    params.get("id") ??
+    params.get("data.id") ??
+    body?.data?.id ??
+    (typeof body?.resource === "string" ? body.resource.split("/").pop() : null);
 
-  // Solo nos interesan los pagos. Los merchant_order se ignoran porque
-  // Mercado Pago también manda un aviso por cada pago.
-  if (type !== "payment" || !paymentId) {
+  if (!topic || !id) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const token = process.env.MP_ACCESS_TOKEN;
-  if (!token) {
-    return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN" }, { status: 500 });
-  }
+  try {
+    if (topic === "payment") {
+      const confirmed = await confirmPayment(String(id));
+      return NextResponse.json({ ok: true, confirmed });
+    }
 
-  // No confiamos en el aviso: consultamos el estado real del pago
-  const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    // 502 hace que Mercado Pago reintente más tarde
-    return NextResponse.json({ error: "No se pudo consultar el pago" }, { status: 502 });
-  }
+    if (topic === "merchant_order") {
+      // Consultamos la orden completa y confirmamos sus pagos aprobados
+      const mo = await mpGet(`/merchant_orders/${id}`);
+      if (mo.order_status !== "paid") {
+        return NextResponse.json({ ok: true, ignored: true });
+      }
+      for (const p of mo.payments ?? []) {
+        if (p.status === "approved") await confirmPayment(String(p.id));
+      }
+      return NextResponse.json({ ok: true });
+    }
 
-  const payment = await res.json();
-
-  if (payment.status !== "approved" || !payment.external_reference) {
     return NextResponse.json({ ok: true, ignored: true });
+  } catch (e) {
+    console.error(e);
+    // 502 hace que Mercado Pago reintente el aviso más tarde
+    return NextResponse.json({ error: "No se pudo procesar el aviso" }, { status: 502 });
   }
-
-  // Solo cambia si el pedido sigue en pending: si el aviso llega dos veces, no pasa nada
-  await prisma.order.updateMany({
-    where: { id: String(payment.external_reference), status: "pending" },
-    data: { status: "paid", mpPaymentId: String(payment.id) },
-  });
-
-  return NextResponse.json({ ok: true });
 }
+
+
 
 
 
