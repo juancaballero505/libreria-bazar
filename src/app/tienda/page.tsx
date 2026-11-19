@@ -95,104 +95,76 @@ export default function TiendaPage() {
     }
   }
 
-  if (cargando) return <p style={{ padding: 24 }}>Cargando productos...</p>;
+  if (cargando) return <p className="aero-status">Cargando productos...</p>;
 
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 28, marginBottom: 16 }}>Tienda</h1>
+    <main className="aero-main">
+      <h1 className="aero-title">Tienda</h1>
 
-      {productos.length === 0 && <p>No hay productos disponibles en este momento.</p>}
+      {productos.length === 0 && <p className="aero-muted">No hay productos disponibles en este momento.</p>}
 
       {productos.map((p) => (
-        <section key={p.id} style={card}>
+        <section key={p.id} className="aero-card">
           <p style={{ fontSize: 18, fontWeight: 600 }}>{p.name}</p>
-          {p.description && <p style={{ color: "#555" }}>{p.description}</p>}
+          {p.description && <p className="aero-muted">{p.description}</p>}
           <p>
             ${p.price} · quedan {disponible(p)}
           </p>
           <button
             onClick={() => agregar(p)}
             disabled={cantidadEnCarrito(p.id) >= disponible(p)}
-            style={btnPrimary}
+            className="aero-btn"
           >
             Agregar
           </button>
         </section>
       ))}
 
-      <h2 style={{ fontSize: 22, marginTop: 32 }}>Tu carrito</h2>
-      {carrito.length === 0 && <p>Todavía no agregaste productos.</p>}
+      <h2 className="aero-subtitle">Tu carrito</h2>
+      {carrito.length === 0 && <p className="aero-muted">Todavía no agregaste productos.</p>}
 
       {carrito.map((l) => (
         <div
           key={l.product.id}
-          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}
+          className="aero-card"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
         >
           <span>
             {l.product.name} x {l.quantity}
           </span>
           <span>
-            <button onClick={() => quitar(l.product.id)} style={btnSmall}>−</button>
-            <button onClick={() => agregar(l.product)} style={btnSmall}>+</button>
+            <button onClick={() => quitar(l.product.id)} className="aero-btn aero-btn-small">−</button>
+            <button onClick={() => agregar(l.product)} className="aero-btn aero-btn-small">+</button>
           </span>
         </div>
       ))}
 
-      <p style={{ fontSize: 20, marginTop: 8 }}>Total: ${total}</p>
+      <p className="aero-total">Total: ${total}</p>
 
-      <h2 style={{ fontSize: 22, marginTop: 32 }}>Tus datos</h2>
+      <h2 className="aero-subtitle">Tus datos</h2>
       <input
         placeholder="Nombre"
         value={nombre}
         onChange={(e) => setNombre(e.target.value)}
-        style={input}
+        className="aero-input"
       />
       <input
         placeholder="Email"
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        style={input}
+        className="aero-input"
       />
 
-      {error && <p style={{ color: "red", marginTop: 12 }}>{error}</p>}
+      {error && <p className="aero-error" style={{ marginTop: 12 }}>{error}</p>}
 
       <button
         onClick={pagar}
         disabled={enviando || carrito.length === 0}
-        style={{ ...btnPrimary, width: "100%", marginTop: 16, padding: 16, fontSize: 18 }}
+        className="aero-btn aero-btn-block"
       >
         {enviando ? "Preparando el pago..." : "Pagar con Mercado Pago"}
       </button>
     </main>
   );
 }
-
-const card = {
-  border: "1px solid #ccc",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 12,
-} as const;
-
-const btnPrimary = {
-  padding: "12px 20px",
-  fontSize: 16,
-  borderRadius: 10,
-  background: "#1583d7",
-  color: "white",
-  border: "none",
-} as const;
-
-const btnSmall = { padding: "4px 12px", fontSize: 18, marginLeft: 6 } as const;
-
-const input = {
-  display: "block",
-  width: "100%",
-  padding: 12,
-  fontSize: 16,
-  marginBottom: 10,
-  borderRadius: 8,
-  border: "1px solid #ccc",
-} as const;
-

@@ -46,24 +46,20 @@ export default function PedidosPage() {
       alert(data?.error ?? "No se pudo marcar como entregado");
       return;
     }
-    // Lo sacamos de la lista sin recargar la página
     setPedidos((prev) => prev.filter((p) => p.id !== order.id));
   }
 
-  if (cargando) return <p style={{ padding: 24 }}>Cargando pedidos...</p>;
-  if (error) return <p style={{ padding: 24, color: "red" }}>{error}</p>;
+  if (cargando) return <p className="aero-status">Cargando pedidos...</p>;
+  if (error) return <p className="aero-status aero-error">{error}</p>;
 
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 28, marginBottom: 16 }}>Por retirar</h1>
+    <main className="aero-main">
+      <h1 className="aero-title">Por retirar</h1>
 
-      {pedidos.length === 0 && <p>No hay pedidos pendientes de retiro.</p>}
+      {pedidos.length === 0 && <p className="aero-muted">No hay pedidos pendientes de retiro.</p>}
 
       {pedidos.map((p) => (
-        <section
-          key={p.id}
-          style={{ border: "1px solid #ccc", borderRadius: 12, padding: 16, marginBottom: 12 }}
-        >
+        <section key={p.id} className="aero-card">
           <p style={{ fontSize: 20, fontWeight: 600 }}>{p.customerName ?? "Sin nombre"}</p>
           <p>Total: ${p.total}</p>
           <ul>
@@ -73,19 +69,7 @@ export default function PedidosPage() {
               </li>
             ))}
           </ul>
-          <button
-            onClick={() => marcarEntregado(p)}
-            style={{
-              width: "100%",
-              padding: "16px",
-              fontSize: 18,
-              borderRadius: 10,
-              background: "#1583d7",
-              color: "white",
-              border: "none",
-              marginTop: 8,
-            }}
-          >
+          <button onClick={() => marcarEntregado(p)} className="aero-btn aero-btn-block">
             Entregado
           </button>
         </section>
@@ -97,5 +81,3 @@ export default function PedidosPage() {
     </main>
   );
 }
-
-
