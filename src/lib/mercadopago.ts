@@ -50,5 +50,24 @@ export async function createPreference(order: OrderForPayment) {
   };
 }
 
+export async function refundPayment(paymentId: string, amount: number, idempotencyKey: string) {
+  const token = process.env.MP_ACCESS_TOKEN;
+  if (!token) throw new Error("Falta MP_ACCESS_TOKEN");
+
+  const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      "X-Idempotency-Key": idempotencyKey,
+    },
+    body: JSON.stringify({ amount }),
+  });
+
+  if (!res.ok) throw new Error(`Mercado Pago ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<{ id: number; status: string }>;
+}
+
+
 
 
