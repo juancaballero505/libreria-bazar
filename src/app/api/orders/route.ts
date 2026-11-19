@@ -90,8 +90,8 @@ export async function POST(req: NextRequest) {
         include: { items: true },
       });
 
-      return { order: updated, initPoint: pref.sandboxInitPoint };
-    });
+      return { order: updated, initPoint: pref.sandboxInitPoint };    
+    }, { timeout: 20000 });
 
     return NextResponse.json({ ...result.order, initPoint: result.initPoint }, { status: 201 });
   } catch (e) {
