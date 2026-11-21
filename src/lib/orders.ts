@@ -1,6 +1,3 @@
-import { prisma } from "@/lib/prisma";
-
-
 export type OrderItemInput = {
   productId: string;
   quantity: number;
@@ -10,6 +7,7 @@ export type OrderInput = {
   customerName: string | null;
   customerEmail: string | null;
   items: OrderItemInput[];
+  printJobIds: string[];
 };
 
 type ParseResult =
@@ -25,12 +23,14 @@ export function parseOrderBody(body: unknown): ParseResult {
   }
   const b = body as Record<string, unknown>;
 
-  if (!Array.isArray(b.items) || b.items.length === 0) {
-    return { ok: false, error: "items debe ser una lista con al menos un producto" };
+  // items es opcional: un pedido puede ser solo de impresión
+  const rawItems = b.items ?? [];
+  if (!Array.isArray(rawItems)) {
+    return { ok: false, error: "items debe ser una lista" };
   }
 
   const items: OrderItemInput[] = [];
-  for (const item of b.items) {
+  for (const item of rawItems) {
     if (!item || typeof item !== "object") {
       return { ok: false, error: "Cada item debe ser un objeto" };
     }
@@ -42,8 +42,21 @@ export function parseOrderBody(body: unknown): ParseResult {
     if (!isPositiveInt(it.quantity)) {
       return { ok: false, error: "quantity debe ser un entero mayor a 0" };
     }
-
     items.push({ productId: it.productId, quantity: it.quantity as number });
+  }
+
+  // printJobIds: archivos subidos previamente, sin repetir
+  const rawPrints = b.printJobIds ?? [];
+  if (
+    !Array.isArray(rawPrints) ||
+    rawPrints.some((x) => typeof x !== "string" || !x)
+  ) {
+    return { ok: false, error: "printJobIds debe ser una lista de ids" };
+  }
+  const printJobIds = Array.from(new Set(rawPrints as string[]));
+
+  if (items.length === 0 && printJobIds.length === 0) {
+    return { ok: false, error: "El pedido necesita productos o archivos para imprimir" };
   }
 
   const customerName =
@@ -55,46 +68,7 @@ export function parseOrderBody(body: unknown): ParseResult {
     typeof b.customerEmail === "string" && b.customerEmail.trim()
       ? b.customerEmail.trim()
       : null;
-  
 
-
-
-  return { ok: true, data: { customerName, customerEmail, items } };
+  return { ok: true, data: { customerName, customerEmail, items, printJobIds } };
 }
-
-
-
-
-// Cancela pedidos pending con más de 5 minutos y devuelve su stock
-export async function cancelExpiredOrders(minutes = 5) {
-  const limite = new Date(Date.now() - minutes * 60 * 1000);
-
-  const vencidos = await prisma.order.findMany({
-    where: { status: "pending", createdAt: { lt: limite } },
-    include: { items: true },
-  });
-
-  let canceladas = 0;
-  for (const order of vencidos) {
-    const cancelado = await prisma.$transaction(async (tx) => {
-      const r = await tx.order.updateMany({
-        where: { id: order.id, status: "pending" },
-        data: { status: "cancelled" },
-      });
-      if (r.count === 0) return false;
-
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { reserved: { decrement: item.quantity } },
-        });
-      }
-      return true;
-    });
-    if (cancelado) canceladas++;
-  }
-  return canceladas;
-}
-
-
 
