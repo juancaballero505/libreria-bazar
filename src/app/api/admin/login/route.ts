@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   res.cookies.set(NOMBRE_COOKIE, crearSesion(), {
     httpOnly: true, // el navegador la guarda, pero el JavaScript de la página no la lee
     sameSite: "lax",
-    secure: true, // ngrok y el hosting usan https
+    secure: process.env.NODE_ENV === "production", // ngrok y el hosting usan https
     path: "/",
     maxAge: DURACION_COOKIE,
   });

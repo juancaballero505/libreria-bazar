@@ -69,7 +69,8 @@ model Order {
   customerEmail  String?
   customerPhone  String?
   createdAt      DateTime    @default(now())
-  items          OrderItem[]
+  items          OrderItem[]   
+  printJobs      PrintJob[]
 }
 
 model OrderItem {
@@ -85,11 +86,19 @@ model OrderItem {
 
 model PrintJob {
   id           String    @id @default(cuid())
-  filename     String
+  orderId      String?
+  order        Order?    @relation(fields: [orderId], references: [id])
   originalName String
-  status       String    @default("pending") // pending | printing | done | error
+  storagePath  String
+  pages        Int
   copies       Int       @default(1)
+  color        Boolean   @default(false)
+  duplex       Boolean   @default(false)
+  paper        String    @default("a4") // a4 | foto
+  price        Float
+  status       String    @default("pendiente") // pendiente | impreso | listo | entregado
   createdAt    DateTime  @default(now())
+  dueAt        DateTime?
   printedAt    DateTime?
 }
 
