@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseProductBody, handlePrismaError } from "@/lib/products";
-
+import { exigirAdmin } from "@/lib/admin";
 type Context = { params: Promise<{ id: string }> };
 
 // GET /api/products/:id
@@ -22,6 +22,8 @@ export async function GET(_req: NextRequest, { params }: Context) {
 
 // PUT /api/products/:id  (se envían solo los campos que cambian)
 export async function PUT(req: NextRequest, { params }: Context) {
+  const noAutorizado = exigirAdmin(req);
+  if (noAutorizado) return noAutorizado;
   const { id } = await params;
 
   const parsed = parseProductBody(await req.json().catch(() => null), true);
@@ -42,7 +44,9 @@ export async function PUT(req: NextRequest, { params }: Context) {
 
 // DELETE /api/products/:id
 // No borra el registro: lo desactiva. Así los pedidos viejos conservan su historial.
-export async function DELETE(_req: NextRequest, { params }: Context) {
+export async function DELETE(req: NextRequest, { params }: Context) {
+  const noAutorizado = exigirAdmin(req);
+  if (noAutorizado) return noAutorizado;
   const { id } = await params;
 
   try {
@@ -55,4 +59,6 @@ export async function DELETE(_req: NextRequest, { params }: Context) {
     return handlePrismaError(e);
   }
 }
+
+
 

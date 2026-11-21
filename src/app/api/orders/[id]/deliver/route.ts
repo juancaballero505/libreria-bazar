@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
+import { exigirAdmin } from "@/lib/admin";
 // POST /api/orders/:id/deliver
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const noAutorizado = exigirAdmin(req);
+  if (noAutorizado) return noAutorizado;
   const { id } = params;
 
   // updateMany solo cambia el pedido si sigue en "paid".

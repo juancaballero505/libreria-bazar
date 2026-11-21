@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { refundPayment } from "@/lib/mercadopago";
-
+import { exigirAdmin } from "@/lib/admin";
 type RefundRequest = {
   items: { orderItemId: string; quantity: number; reason?: string }[];
 };
 
 // POST /api/orders/:id/refunds
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const noAutorizado = exigirAdmin(req);
+  if (noAutorizado) return noAutorizado;
   const body = (await req.json().catch(() => null)) as RefundRequest | null;
   if (!body?.items?.length) {
     return NextResponse.json({ error: "Indicá al menos un item a devolver" }, { status: 400 });

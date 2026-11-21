@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseProductBody, handlePrismaError } from "@/lib/products";
-
+import { exigirAdmin } from "@/lib/admin";
 // GET /api/products?search=cuaderno&categoryId=...&active=true
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
 
 // POST /api/products
 export async function POST(req: NextRequest) {
+  const noAutorizado = exigirAdmin(req);
+  if (noAutorizado) return noAutorizado;
   const parsed = parseProductBody(await req.json().catch(() => null));
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
