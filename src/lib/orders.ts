@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/prisma";
+
 export type OrderItemInput = {
   productId: string;
   quantity: number;
@@ -70,5 +72,40 @@ export function parseOrderBody(body: unknown): ParseResult {
       : null;
 
   return { ok: true, data: { customerName, customerEmail, items, printJobIds } };
+
+  
+
+
+}
+
+// Cancela pedidos pending vencidos (más de 5 minutos) y libera su reserva
+export async function cancelExpiredOrders(minutes = 5) {
+  const limite = new Date(Date.now() - minutes * 60 * 1000);
+
+  const vencidos = await prisma.order.findMany({
+    where: { status: "pending", createdAt: { lt: limite } },
+    include: { items: true },
+  });
+
+  let canceladas = 0;
+  for (const order of vencidos) {
+    const cancelado = await prisma.$transaction(async (tx) => {
+      const r = await tx.order.updateMany({
+        where: { id: order.id, status: "pending" },
+        data: { status: "cancelled" },
+      });
+      if (r.count === 0) return false;
+
+      for (const item of order.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { reserved: { decrement: item.quantity } },
+        });
+      }
+      return true;
+    });
+    if (cancelado) canceladas++;
+  }
+  return canceladas;
 }
 
