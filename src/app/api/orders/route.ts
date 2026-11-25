@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseOrderBody, OrderItemInput } from "@/lib/orders";
 import { createPreference } from "@/lib/mercadopago";
+import { precioVigente } from "@/lib/offers";
 
 const HORAS_ENTREGA_IMPRESION = 24;
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
       const orderItems: { productId: string; quantity: number; price: number }[] = [];
       const nombres = new Map<string, string>();
 
-      // 1. Productos: existencia, activo, precio histórico y stock
+      // 1. Productos: existencia, activo, precio vigente (con promociones) y stock
       if (items.length > 0) {
         const products = await tx.product.findMany({
           where: { id: { in: items.map((i) => i.productId) } },
@@ -50,12 +51,13 @@ export async function POST(req: NextRequest) {
           if (!product || !product.active) {
             throw new OrderError(`Producto no disponible: ${item.productId}`, 400);
           }
-          total += product.price * item.quantity;
+          const precioUnitario = await precioVigente(product.id, product.price, tx);
+          total += precioUnitario * item.quantity;
           nombres.set(product.id, product.name);
           orderItems.push({
             productId: product.id,
             quantity: item.quantity,
-            price: product.price,
+            price: precioUnitario,
           });
         }
 
@@ -163,7 +165,6 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json(orders);
 }
-
 
 
 
