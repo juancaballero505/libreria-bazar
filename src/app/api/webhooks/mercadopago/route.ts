@@ -15,15 +15,16 @@ async function mpGet(path: string) {
 
 // Confirma un pago aprobado: pasa el pedido a paid y ajusta stock y reserva.
 // Es idempotente: si el pedido ya está pagado, no hace nada.
-async function confirmPayment(paymentId: string): Promise<boolean> {
+async function confirmPayment(paymentId: string): Promise<"confirmado" | "ignorado"> {
   const payment = await mpGet(`/v1/payments/${paymentId}`);
-  if (payment.status !== "approved" || !payment.external_reference) return false;
+
+  // Si el pago no está aprobado o no tiene pedido asociado, no hacemos nada
+  if (payment.status !== "approved" || !payment.external_reference) return "ignorado";
 
   const orderId = String(payment.external_reference);
   const mpPaymentId = String(payment.id);
 
-  return prisma.$transaction(async (tx) => {
-    // Caso normal: el pedido estaba pending y tiene reserva
+  const confirmado = await prisma.$transaction(async (tx) => {
     const pagado = await tx.order.updateMany({
       where: { id: orderId, status: "pending" },
       data: { status: "paid", mpPaymentId },
@@ -62,6 +63,8 @@ async function confirmPayment(paymentId: string): Promise<boolean> {
 
     return false;
   });
+
+  return confirmado ? "confirmado" : "ignorado";
 }
 
 // POST /api/webhooks/mercadopago
@@ -69,7 +72,6 @@ export async function POST(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const body = await req.json().catch(() => null);
 
-  // Formato nuevo (type, data.id) o antiguo (topic, id). merchant_order viene con resource
   const topic = params.get("topic") ?? params.get("type") ?? body?.topic ?? body?.type ?? null;
   const id =
     params.get("id") ??
@@ -77,18 +79,25 @@ export async function POST(req: NextRequest) {
     body?.data?.id ??
     (typeof body?.resource === "string" ? body.resource.split("/").pop() : null);
 
+  // Aviso de modo producción mientras la app usa credenciales de prueba:
+  // no lo podemos consultar, así que lo registramos y respondemos 200 para que no reintente
+  
+  if (body?.live_mode === true) {
+    console.warn(`Aviso live_mode=true ignorado (id ${id}). La app está en modo prueba.`);
+    return NextResponse.json({ ok: true, ignored: "live_mode" });
+  }
+
   if (!topic || !id) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
   try {
     if (topic === "payment") {
-      const confirmed = await confirmPayment(String(id));
-      return NextResponse.json({ ok: true, confirmed });
+      const resultado = await confirmPayment(String(id));
+      return NextResponse.json({ ok: true, confirmed: resultado === "confirmado" });
     }
 
     if (topic === "merchant_order") {
-      // Consultamos la orden completa y confirmamos sus pagos aprobados
       const mo = await mpGet(`/merchant_orders/${id}`);
       if (mo.order_status !== "paid") {
         return NextResponse.json({ ok: true, ignored: true });
@@ -102,11 +111,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true });
   } catch (e) {
     console.error(e);
-    // 502 hace que Mercado Pago reintente el aviso más tarde
+    // 502 solo cuando el problema es transitorio. Mercado Pago reintenta y, si
+    // lo rechaza, el aviso se puede reintentar más tarde sin perder el pago.
     return NextResponse.json({ error: "No se pudo procesar el aviso" }, { status: 502 });
   }
 }
-
 
 
 
