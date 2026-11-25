@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 const NOMBRE_COOKIE = "admin_session";
 
-// Misma firma que lib/auth.ts, pero con la API web que funciona en Edge
 async function firmar(valor: string, secreto: string) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -42,7 +41,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/pedidos/:path*"],
+  matcher: ["/admin", "/pedidos/:path*"],
 };
-
 

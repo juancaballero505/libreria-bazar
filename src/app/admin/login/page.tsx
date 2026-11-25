@@ -25,7 +25,7 @@ export default function LoginPage() {
       setEnviando(false);
       return;
     }
-    router.push("/pedidos");
+    router.push("/admin");
   }
 
   return (
